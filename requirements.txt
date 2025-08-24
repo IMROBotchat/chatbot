@@ -1,0 +1,32 @@
+# Flask and extensions
+Flask==2.3.4
+Flask-Cors==3.0.10
+python-dotenv==1.0.0
+
+# SQLAlchemy and database drivers
+SQLAlchemy==2.0.22
+psycopg2-binary==2.9.9  # PostgreSQL driver; replace with mysqlclient==2.1.1 if using MySQL
+# SQLite comes built-in with Python
+
+# LangChain stack
+langchain==0.1.156
+langchain-openai==0.0.9
+langchain-huggingface==0.0.15
+langchain-community==0.0.20
+
+# Chroma vectorstore
+chromadb==0.3.31
+
+# HuggingFace / embeddings
+sentence-transformers==2.2.2
+torch==2.3.0
+transformers==4.32.0
+huggingface-hub==1.19.1
+
+# HTTP and JSON utilities
+requests==2.31.0
+httpx==0.24.1
+
+# Progress bars and utilities
+tqdm==4.66.1
+typing-extensions==4.7.1
