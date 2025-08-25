@@ -16,6 +16,8 @@ from langchain_community.utilities.sql_database import SQLDatabase
 from langchain_community.agent_toolkits.sql.toolkit import SQLDatabaseToolkit
 from langchain_huggingface import HuggingFaceEmbeddings
 import torch
+from langchain.output_parsers import StructuredOutputParser, ResponseSchema
+from langchain.prompts import PromptTemplate
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -68,122 +70,84 @@ def get_rag_tool():
 db = SQLDatabase.from_uri(DB_URI)
 
 
-def get_sql_tools():
+def get_sql_tool():
     toolkit = SQLDatabaseToolkit(db=db, llm=llm)
     return toolkit.get_tools()
 
 
-# --- Input parser ---
-def parse_schedule_input(text_input: str):
-    name = re.search(r'name[:\s]*([\w\s]+)', text_input, re.IGNORECASE)
-    purpose = re.search(r'purpose[:\s]*([\w\s]+)', text_input, re.IGNORECASE)
-    country = re.search(r'country[:\s]*([\w\s]+)', text_input, re.IGNORECASE)
-
-    # Support multiple nextimrdate conditions (<=, >=, <, >, =)
-    conditions = re.findall(r'nextimrdate\s*(<=|>=|<|>|=)?\s*([\d]{4}-[\d]{2}-[\d]{2})', text_input, re.IGNORECASE)
-    date_conditions = [(op if op else "=", dt) for op, dt in conditions]
-
-    if name or purpose or country or date_conditions:
-        return {
-            "name": name.group(1).strip() if name else None,
-            "purpose": purpose.group(1).strip() if purpose else None,
-            "country": country.group(1).strip() if country else None,
-            "date_conditions": date_conditions
-        }
-
-    # Fallback: comma-separated
-    parts = [p.strip() for p in text_input.split(",")]
-    return {
-        "name": parts[0] if len(parts) > 0 else None,
-        "purpose": parts[1] if len(parts) > 1 else None,
-        "country": parts[2] if len(parts) > 2 else None,
-        "date_conditions": [("=", parts[3])] if len(parts) > 3 else []
-    }
-
-
-# --- Schedule insert ---
-def create_schedule(user_text: str):
-    data = parse_schedule_input(user_text)
-    date_conditions = data.get("date_conditions", [])
-    created_ids = []
-    skipped = []
-
-    with db._engine.connect() as conn:
-        if date_conditions:
-            # Build WHERE clause dynamically
-            where_clauses = []
-            params = {}
-            for idx, (op, dt) in enumerate(date_conditions):
-                param_name = f"date{idx}"
-                where_clauses.append(f"nextimrdate {op} :{param_name}")
-                params[param_name] = dt
-
-            query = f"SELECT mucid, purpose, country, nextimrdate FROM modelusecase WHERE {' AND '.join(where_clauses)}"
-            matches = conn.execute(text(query), params).fetchall()
-
-            for match in matches:
-                # Duplicate check
-                existing = conn.execute(text("""
-                    SELECT scheduleid FROM schedules
-                    WHERE name=:name AND purpose=:purpose AND country=:country
-                """), {
-                    "name": match.mucid,
-                    "purpose": match.purpose,
-                    "country": match.country
-                }).fetchone()
-                if existing:
-                    skipped.append(existing[0])
-                    continue
-
-                # Insert
-                schedule_data = {"name": match.mucid, "purpose": match.purpose, "country": match.country}
-                result = conn.execute(text("""
-                    INSERT INTO schedules (name, purpose, country)
-                    VALUES (:name, :purpose, :country)
-                    RETURNING scheduleid
-                """), schedule_data)
-                created_ids.append(result.scalar_one())
-
-            conn.commit()
-            if matches:
-                return {
-                    "status": "ok",
-                    "created": created_ids,
-                    "skipped_duplicates": skipped,
-                    "message": f"✅ {len(created_ids)} schedule(s) created, {len(skipped)} skipped as duplicates."
-                }
-
-        # Fallback manual insert
-        result = conn.execute(text("""
-            INSERT INTO schedules (name, purpose, country)
-            VALUES (:name, :purpose, :country)
-            RETURNING scheduleid
-        """), {"name": data.get("name"), "purpose": data.get("purpose"), "country": data.get("country")})
-        created_ids.append(result.scalar_one())
-        conn.commit()
-
-    return {"status": "ok", "created": created_ids, "message": f"🆕 Schedule created with ID: {created_ids}"}
-
-
-def get_insert_tool():
-    return Tool(
-        name="RAG_Insert",
-        func=create_schedule,
-        description=(
-            "Creates schedule(s). If `nextimrdate` matches records in `modelusecase`, "
-            "it will create schedules for all of them, avoiding duplicates. "
-            "Supports operators: <=, >=, <, >, =. "
-            "If no match, inserts using provided name, purpose, and country."
-        )
-    )
+# Define schema for Markdown summary
+# response_schemas = [
+#     ResponseSchema(name="overall_totals", description="Markdown section for overall totals"),
+#     ResponseSchema(name="averages", description="Markdown section for averages"),
+#     ResponseSchema(name="activity_trends", description="Markdown bullets for activity trends"),
+#     ResponseSchema(name="time_based", description="Markdown section for time-based insights"),
+#     ResponseSchema(name="top_users", description="Markdown ranked list of top users"),
+#     ResponseSchema(name="key_takeaways", description="Markdown list of 3 concise insights"),
+#     ResponseSchema(name="recommendations", description="Markdown list of 2 user-level recommendations"),
+# ]
+#
+# parser = StructuredOutputParser.from_response_schemas(response_schemas)
+# format_instructions = parser.get_format_instructions()
+#
+# prompt = PromptTemplate(
+#     template="""
+#         You are a data analyst. Analyze the following usage_summary data:
+#
+#         {rows}
+#
+#         User request:
+#         {query}
+#
+#         Return the analysis strictly in the schema below:
+#
+#         {format_instructions}
+#         """,
+#     input_variables=["rows", "query"],
+#     partial_variables={"format_instructions": format_instructions},
+#     )
+#
+#
+# def summarize_usage(query: str):
+#     with db._engine.connect() as conn:
+#         result = conn.execute(text("SELECT * FROM usage_summary;"))
+#         rows = [dict(r._mapping) for r in result]
+#
+#     response = llm.invoke(prompt.format(rows=rows, query=query))
+#     parsed = parser.parse(response.content)
+#
+#     # Merge into one Markdown string
+#     markdown_report = f"""
+#         # 📊 Usage Summary
+#
+#         #### Overall Totals
+#         {parsed['overall_totals']}
+#
+#         #### 🔹 Averages
+#         {parsed['averages']}
+#
+#         #### 🔥 Activity Trends
+#         {parsed['activity_trends']}
+#
+#         #### ⏰ Time-Based Insights
+#         {parsed['time_based']}
+#
+#         #### 🏆 Top Users
+#         {parsed['top_users']}
+#
+#         #### ❗ Key Takeaways
+#         {parsed['key_takeaways']}
+#
+#         #### 🚨 Recommendations at user level
+#         {parsed['recommendations']}
+#     """
+#     return markdown_report.strip()
 
 
 # --- Usage summary ---
 def summarize_usage(query: str):
     with db._engine.connect() as conn:
         result = conn.execute(text("""
-            SELECT user_id, user_name, usage_date, total_sessions, total_requests, total_tokens, top_action, last_used_at
-            FROM usage_summary;
+            SELECT * FROM usage_summary;
         """))
         rows = [dict(r._mapping) for r in result]
 
@@ -191,41 +155,59 @@ def summarize_usage(query: str):
         return "No usage summary data found."
 
     summary_prompt = f"""
-        You are a data analyst. Here is the usage_summary data:
+        You are a data analyst. You are given the following rows from `usage_summary`:
+
         {rows}
 
-        User request: {query}
+        The user’s request is:
+        {query}
 
-        🚨 STRICT INSTRUCTIONS:
-        - Always output in **Markdown format**.
-        - Use bullet points and headings.
-        - Numbers must be **bold**.
+        ---
 
-        # 📊 Usage Summary
+        ### STRICT INSTRUCTIONS
+        - You MUST perform calculations directly from the given rows.
+        - You MUST apply any filters/groupings mentioned in the user request.
+        - You MUST output in the EXACT Markdown structure below.
+        - DO NOT add extra sections.
+        - DO NOT output a narrative paragraph.
+        - DO NOT leave placeholders like X.
+        - If data is missing, output "Not available".
+        - Provide usage summary as in a comprehensive, readable and reporting format.
 
-        ### Overall Totals
-        - **Total Sessions:** X
-        - **Total Requests:** X
-        - **Total Tokens:** X
+        ---
 
-        ### 🔹 Averages
-        - **Average Sessions per Day:** X
-        - **Average Requests per Session:** X
-        - **Average Tokens per Request:** X
+        ### 📊 Usage Summary
 
-        ### 🔥 Activity Trends
-        - (Write 1–2 bullets)
+        #### Overall Totals
+        - **Total Sessions:** <calculated_value>
+        - **Total Requests:** <calculated_value>
+        - **Total Tokens:** <calculated_value>
 
-        ### ⏰ Time-Based Insights
-        - (Last active date, peak activity date)
+        #### 🔹 Averages
+        - **Average Sessions per Day:** <calculated_value>
+        - **Average Requests per Session:** <calculated_value>
+        - **Average Tokens per Request:** <calculated_value>
+        
+        #### 🔹 User session Averages
+        - **Average sessions in a day for all users :** <calculated_value>
+        
+        #### 🔥 Activity Trends
+        - <1–2 concise bullets about trends in sessions, requests, or tokens>
 
-        ### 🏆 Top Users
-        1. User A
-        2. User B
-        3. ...
+        #### ⏰ Time-Based Insights
+        - Last active date: <latest_date>
+        - Peak activity date: <date_with_max_requests_or_tokens>
 
-        ### ❗ Key Takeaways
-        - (3 concise bullets)
+        #### 🏆 Top Users
+        1. <user_name> (<metric>)
+        2. <user_name> (<metric>)
+        3. <user_name> (<metric>)
+
+        #### ❗ Key Takeaways
+        - <3 concise insights>
+
+        #### 🚨 Recommendations at user level
+        - <2 actionable recommendations>
     """
     response = llm.invoke(summary_prompt)
     return response.content.strip()
@@ -238,17 +220,18 @@ def get_usage_tool():
         description=(
             "Summarizes user activity from the usage_summary table. "
             "You can include filters in your query, such as:\n"
-            "- 'Summarize usage_summary for all users where usage_date >= 2025-08-23'\n"
+            "- 'Summarize usage_summary for all users group by teams.\n"
             "- 'Summarize usage for the last 7 days'\n"
-            "- 'Summarize usage for user Satish after 2025-08-20'\n\n"
             "The tool will query the database, fetch filtered rows, and produce "
-            "a structured report with totals, averages, activity trends, and key takeaways."
-        )
+            "a structured report with totals, averages, activity trends, and key takeaways and reccomondations to improve usage"
+            "Provide usage summary as in a comprehensive, readable and reporting format."
+        ),
+        # return_direct=True
     )
 
 
 # --- Agent assembly ---
-tools = [get_rag_tool()] + get_sql_tools() + [get_insert_tool(), get_usage_tool()]
+tools = [get_rag_tool()] + get_sql_tool() + [get_usage_tool()]
 
 agent = initialize_agent(
     tools=tools,
@@ -271,13 +254,10 @@ def chat():
     if not message:
         return jsonify(error="The 'message' field is required"), 400
 
-    if 'usage_summary' in message:
-        final_res = summarize_usage(message)
-    else:
-        reply = run_agent_query(message)
-        final_res = reply["output"]
+    reply = run_agent_query(message)
+    # final_res = reply["output"]
 
-    return jsonify(status="ok", body={"reply": final_res, "format": "markdown"}), 200
+    return jsonify(status="ok", body={"reply": reply["output"], "format": "markdown"}), 200
 
 
 if __name__ == "__main__":
