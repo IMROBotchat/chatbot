@@ -16,8 +16,6 @@ from langchain_community.utilities.sql_database import SQLDatabase
 from langchain_community.agent_toolkits.sql.toolkit import SQLDatabaseToolkit
 from langchain_huggingface import HuggingFaceEmbeddings
 import torch
-from langchain.output_parsers import StructuredOutputParser, ResponseSchema
-from langchain.prompts import PromptTemplate
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -73,74 +71,6 @@ db = SQLDatabase.from_uri(DB_URI)
 def get_sql_tool():
     toolkit = SQLDatabaseToolkit(db=db, llm=llm)
     return toolkit.get_tools()
-
-
-# Define schema for Markdown summary
-# response_schemas = [
-#     ResponseSchema(name="overall_totals", description="Markdown section for overall totals"),
-#     ResponseSchema(name="averages", description="Markdown section for averages"),
-#     ResponseSchema(name="activity_trends", description="Markdown bullets for activity trends"),
-#     ResponseSchema(name="time_based", description="Markdown section for time-based insights"),
-#     ResponseSchema(name="top_users", description="Markdown ranked list of top users"),
-#     ResponseSchema(name="key_takeaways", description="Markdown list of 3 concise insights"),
-#     ResponseSchema(name="recommendations", description="Markdown list of 2 user-level recommendations"),
-# ]
-#
-# parser = StructuredOutputParser.from_response_schemas(response_schemas)
-# format_instructions = parser.get_format_instructions()
-#
-# prompt = PromptTemplate(
-#     template="""
-#         You are a data analyst. Analyze the following usage_summary data:
-#
-#         {rows}
-#
-#         User request:
-#         {query}
-#
-#         Return the analysis strictly in the schema below:
-#
-#         {format_instructions}
-#         """,
-#     input_variables=["rows", "query"],
-#     partial_variables={"format_instructions": format_instructions},
-#     )
-#
-#
-# def summarize_usage(query: str):
-#     with db._engine.connect() as conn:
-#         result = conn.execute(text("SELECT * FROM usage_summary;"))
-#         rows = [dict(r._mapping) for r in result]
-#
-#     response = llm.invoke(prompt.format(rows=rows, query=query))
-#     parsed = parser.parse(response.content)
-#
-#     # Merge into one Markdown string
-#     markdown_report = f"""
-#         # 📊 Usage Summary
-#
-#         #### Overall Totals
-#         {parsed['overall_totals']}
-#
-#         #### 🔹 Averages
-#         {parsed['averages']}
-#
-#         #### 🔥 Activity Trends
-#         {parsed['activity_trends']}
-#
-#         #### ⏰ Time-Based Insights
-#         {parsed['time_based']}
-#
-#         #### 🏆 Top Users
-#         {parsed['top_users']}
-#
-#         #### ❗ Key Takeaways
-#         {parsed['key_takeaways']}
-#
-#         #### 🚨 Recommendations at user level
-#         {parsed['recommendations']}
-#     """
-#     return markdown_report.strip()
 
 
 # --- Usage summary ---
@@ -226,7 +156,6 @@ def get_usage_tool():
             "a structured report with totals, averages, activity trends, and key takeaways and reccomondations to improve usage"
             "Provide usage summary as in a comprehensive, readable and reporting format."
         ),
-        # return_direct=True
     )
 
 
@@ -255,7 +184,6 @@ def chat():
         return jsonify(error="The 'message' field is required"), 400
 
     reply = run_agent_query(message)
-    # final_res = reply["output"]
 
     return jsonify(status="ok", body={"reply": reply["output"], "format": "markdown"}), 200
 
