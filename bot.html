@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>IMRO Chatbot</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-LN+7fdVzj6u52u30Kp6M/trliBMCMKTyK833zpbD+pXdCLuTusPj697FH4R/5mcr" crossorigin="anonymous">
+        <style>
+            #chat2 {
+                border: none;
+                box-shadow: 0 2px 15px -3px rgba(0, 0, 0, 0.09), 0 10px 20px -2px rgba(0, 0, 0, 0.09);
+                background-color: #FFFFFF;
+            }
+            #chat2 .form-control {
+                border-color: #FFFFFF;
+                border: none;
+                height: 70px;
+            }
+            #chat2 .card-header {
+                background-color: #FFFFFF;
+                border-bottom: 2px solid #f5f5f5;
+            }
+            #chat2 .card-footer {
+                background-color: #FFFFFF;
+                border-top: 2px solid #f5f5f5;
+                padding-left: 70px !important;
+            }
+            .card-body {
+                min-height: 400px;
+                height: 400px;
+                overflow-y: auto;
+            }
+            .message {
+                margin-bottom: 1rem;
+                padding: .5rem 1rem;
+                border-radius: .5rem;
+                width: fit-content;
+                max-width: 80%;
+                white-space: pre-line;
+            }
+            .message.user {
+                background-color: #D1E6EA;
+                color: #000;
+                margin-left: auto;
+                border-radius: 10px;
+                padding: 8px;
+            }
+            .message.bot {
+                background-color: #f0f0f0;
+                color: #000;
+                margin-right: auto;
+                border-radius: 10px;
+                padding: 8px;
+            }
+            .card-footer {
+                display: flex;
+                flex-direction: column-reverse; /* Push new lines upward */
+                align-items: flex-start;
+                height: 100px; /* Or max height you prefer */
+                position: relative;
+            }
+            .card-footer .d-flex {
+                display: flex !important;
+                width: 100% !important;
+            }
+            .chat-input {
+                width: 100%;
+                max-width: 100%;
+                padding: 10px 15px;
+                font-size: 16px;
+                border-radius: 8px;
+                border: 1px solid #ccc;
+                resize: none;
+                overflow: hidden; /* prevent scrollbar flash */
+                box-sizing: border-box;
+                transition: height 0.2s ease;
+                position: relative;
+                top: 0%;
+                transform: none;
+            }
+            .typing-indicator {
+                display: flex;
+                gap: 12px;
+                align-items: center;
+                justify-content: center;
+                padding: 8px 5px;
+            }
+
+            .typing-indicator span {
+                width: 8px;
+                height: 8px;
+                background-color: #333;
+                border-radius: 50%;
+                animation: bounce 1.2s infinite ease-in-out;
+            }
+
+            .typing-indicator span:nth-child(2) {
+                animation-delay: 0.2s;
+            }
+            .typing-indicator span:nth-child(3) {
+                animation-delay: 0.4s;
+            }
+
+            @keyframes bounce {
+                0%, 80%, 100% {
+                    transform: scale(0.8);
+                    opacity: 0.6;
+                }
+                40% {
+                    transform: scale(1.2);
+                    opacity: 1;
+                }
+            }
+            img {
+                width: 60px;
+                height: auto;
+                position: absolute;
+                left: 5px;
+            }
+        </style>
+    </head>
+    <body>
+        <section>
+            <div class="container py-5">
+                <div class="row d-flex justify-content-center">
+                    <div class="col-md-10 col-lg-8 col-xl-6">
+                        <div class="card" id="chat2">
+                            <div class="card-header d-flex justify-content-between align-iteams-center p-4">
+                                <h5 class="mb-0">IMRO`Bot</h5>
+                            </div>
+                            <div class="card-body" id="chatWindow">
+                                <!-- User & API response will be displayed here -->
+                            </div>
+                            <div class="card-footer d-flex justify-content-start align-items-center p-3">
+                                <img src="https://mdbcdn.b-cdn.net/img/Photos/new-templates/bootstrap-chat/ava3-bg.webp" 
+                                alt="avatar">
+                                <form id="chatForm" class="d-flex">
+                                    <textarea id="userInput" class="form-control me-2 chat-input"
+                                        placeholder="Type a message..."
+                                        autocomplete="off"
+                                        required
+                                    ></textarea>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js" integrity="sha384-ndDqU0Gzau9qJ1lfW4pNLlhNTkCfHzAVBReH9diLvGRem5+R9g2FzA8ZGN954O5Q" crossorigin="anonymous"></script>
+        <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+        <script>
+            const textarea = document.querySelector('.chat-input');
+            textarea.addEventListener('input', () => {
+                textarea.style.height = 'auto'; // Reset height
+                textarea.style.height = `${textarea.scrollHeight}px`; // Set to content height
+                textarea.style.position = 'relative';
+                textarea.style.top = '50%';
+                textarea.style.transform = 'translateY(-50%)';
+            });
+        </script>
+        <script>
+            $(function() {
+                const $chatWindow = $('#chatWindow');
+                const $form = $('#chatForm');
+                const $input = $('#userInput');
+                
+                function appendMessage(content, sender) {
+                    let formatted = sender === 'bot' ? marked.parse(content) : content;
+                    const $msg = $('<div>')
+                    .addClass('message ' + sender)
+                    .html(content);
+                    $chatWindow.append($msg);
+                    $chatWindow.scrollTop($chatWindow.prop('scrollHeight'));
+                }
+                appendMessage("Hello! I am Chitti, the IMRO`Bot. How can I assist you today?", 'bot')
+                $input.focus();
+
+                const $textarea = document.querySelector('.chat-input');
+                $textarea.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault(); // prevents newline
+                        const userText = $textarea.value.trim();
+                        if (!userText) {
+                            alert("Please enter a message.");
+                            return;
+                        }
+                    
+                        if (userText.length > 500) {
+                            alert("Message too long. Please keep it under 500 characters.");
+                            return;
+                        }
+                    
+                        appendMessage(userText, 'user');
+                        $input.val('').focus();
+                        $textarea.style.height = '70px'; // Reset height
+                    
+                        // show a loading indicator
+                        appendMessage('<div class="typing-indicator"><span></span><span></span><span></span><span></span></div>', 'bot');
+                        // Disable textarea
+                        textarea.disabled = true;
+
+                        // call your chatbot API
+                        $.ajax({
+                            url: 'http://localhost:5003/api/chat',
+                            method: 'POST',
+                            contentType: 'application/json',
+                            data: JSON.stringify({ message: userText }),
+                            success(response) {
+                                // If response.body is a string, parse it
+                                const parsed = typeof response.body === 'string' ? JSON.parse(response.body) : response.body;
+                                const reply = parsed.reply || 'No response from server.';
+                                let format = reply.format || "text";
+                                $chatWindow.find('.message.bot').last().remove();
+                                appendMessage(reply, 'bot', format);
+                                // Re-enable textarea
+                                textarea.disabled = false;
+                                textarea.focus(); // Optionally refocus for quick typing
+                            },
+                            error() {
+                                $chatWindow.find('.message.bot').last().remove();
+                                appendMessage('Sorry, something went wrong.', 'bot');
+                                // Re-enable textarea
+                                textarea.disabled = false;
+                                textarea.focus(); // Optionally refocus for quick typing
+                            }
+                        });
+                    }
+                });
+            });
+        </script>        
+    </body>
+</html>
