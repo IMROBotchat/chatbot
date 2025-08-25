@@ -1,7 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
-import re
 import logging
 from dotenv import load_dotenv
 from sqlalchemy import text
@@ -24,6 +23,7 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 load_dotenv()
 API_KEY = os.getenv("OPENAI_API_KEY")
 DB_URI = os.getenv("DATABASE_URI")
+DOC_PATHS = os.getenv("DOC_PATHS")
 os.environ["OPENAI_API_KEY"] = API_KEY
 
 # --- LLM ---
@@ -52,7 +52,7 @@ def get_retriever(doc_paths: list[str], persist_path: str):
     return vectorstore.as_retriever()
 
 
-retriever = get_retriever(["imro_docs.txt"], "chroma_db")
+retriever = get_retriever([DOC_PATHS], "chroma_db")
 
 
 def get_rag_tool():
